@@ -8,12 +8,17 @@ package cpace_test
 
 import (
 	"bytes"
+	"crypto/rand"
+	"crypto/sha512"
+	"encoding/base64"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 
 	"filippo.io/cpace"
 	"github.com/gtank/ristretto255"
+	"golang.org/x/crypto/hkdf"
 )
 
 func Example() {
@@ -37,6 +42,44 @@ func Example() {
 
 	fmt.Println("keyA == keyB:", bytes.Equal(keyA, keyB))
 	// Output: keyA == keyB: true
+}
+
+func TestTranscript(t *testing.T) {
+	// Don't try this at home.
+	defer func(original io.Reader) { rand.Reader = original }(rand.Reader)
+	rand.Reader = hkdf.Expand(sha512.New, []byte("INSECURE"), nil)
+
+	password := "password"
+	c := cpace.NewContextInfo("a", "b", []byte("ad"))
+
+	tx := sha512.New()
+
+	msgA, s, err := cpace.Start(password, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("msgA: %x\n", msgA)
+	tx.Write(msgA)
+
+	msgB, key, err := cpace.Exchange(password, c, msgA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("msgB: %x\n", msgB)
+	tx.Write(key)
+	t.Logf("key: %x\n", key)
+	tx.Write(msgB)
+
+	if keyA, err := s.Finish(msgB); err != nil {
+		t.Fatal(err)
+	} else if !bytes.Equal(key, keyA) {
+		t.Error("keys were not equal")
+	}
+
+	expected := "6vRYpJez46BWHYxwfhVceLqE44VlJzPtTDn6SpCsKEDxA/VX0aPkSwQZdArulnPzKvN1Ubm9kZ/ujFDxezePVw"
+	if h := base64.RawStdEncoding.EncodeToString(tx.Sum(nil)); h != expected {
+		t.Errorf("transcript hash changed: got %q, expected %q", h, expected)
+	}
 }
 
 func BenchmarkStart(b *testing.B) {
@@ -242,14 +285,14 @@ func TestResults(t *testing.T) {
 			}
 
 			if len(keyA) != 64 {
-				t.Errorf("expected keyA length to be %v, got %v", 64, len(keyA))
+				t.Errorf("keyA length is %v, expected %v", len(keyA), 64)
 			}
 			if len(keyB) != 64 {
-				t.Errorf("expected keyB length to be %v, got %v", 64, len(keyB))
+				t.Errorf("keyB length is %v, expected %v", len(keyB), 64)
 			}
 
 			if eq := bytes.Equal(keyA, keyB); eq != tt.Equal {
-				t.Errorf("expected keyA == keyB to be %v, got %v", tt.Equal, eq)
+				t.Errorf("keyA == keyB is %v, expected %v", eq, tt.Equal)
 			}
 		})
 	}
