@@ -63,7 +63,9 @@ func (c *ContextInfo) validate() error {
 	}
 }
 
-func (c *ContextInfo) withLabel(label string) []byte {
+const label = "cpace-r255"
+
+func (c *ContextInfo) serialize() []byte {
 	b := &cryptobyte.Builder{}
 	for _, in := range [][]byte{
 		[]byte(label), []byte(c.idA), []byte(c.idB), c.ad,
@@ -76,8 +78,7 @@ func (c *ContextInfo) withLabel(label string) []byte {
 }
 
 func secretGenerator(password string, salt []byte, c *ContextInfo) *ristretto255.Element {
-	const label = "cpace-r255 pwkdf"
-	h := hkdf.New(sha512.New, []byte(password), salt, c.withLabel(label))
+	h := hkdf.New(sha512.New, []byte(password), salt, c.serialize())
 	b := make([]byte, 64)
 	h.Read(b)
 	return ristretto255.NewElement().FromUniformBytes(b)
