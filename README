@@ -1,0 +1,84 @@
+WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING
+W                                                                             G
+W   This is an experimental implementation. It might change and be broken     G
+W   in unexpected ways. I know you read this on a lot of docs, but this       G
+W   so far is really only a weekend project. It's also not standardized.      G
+W                                                                             G
+WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING
+
+filippo.io/cpace
+----------------
+
+filippo.io/cpace is a Go implementation of the CPace PAKE,
+instantiated with the ristretto255 group.
+
+Usage
+=====
+
+https://pkg.go.dev/filippo.io/cpace
+
+Details
+=======
+
+This implementation is loosely based on draft-haase-cpace-01, with ristretto255
+swapped in, and a sprinkle of HKDF.
+
+Using a properly abstracted prime order group such as ristretto255 allows us to
+ignore most of the complexity of the spec, and is an excellent case study for
+the value of a tight group abstraction.
+
+1. Since the group has prime order, we don't need cofactor clearing and we don't
+need any low order point checks.
+
+2. The group natively provides encoding, decoding, and map to group.
+   
+3. Since the decoding function only works for valid encodings of valid elements,
+we don't need any wrong curve checks.
+
+4. Equivalent elliptic curve points are abstracted away by encoding and
+decoding, so we don't need to worry about the quadratic twist at all.
+
+5. There is no x-coordinate arithmetic to account for, so there's no need to
+operate on a group modulo negation or to ever clear the sign.
+
+6. We can probably even skip the identity element check, but we do it anyway.
+
+The salt/sid is under-specified, and it's unclear what properties it needs to
+have (random? unpredictable? not controlled by a MitM?). This implementation
+always has the initiator generate it randomly and send it to the peer, as
+allowed by the I-D. This seems safer than letting the user decide; if the higher
+level protocol has a session ID, it should be included in the CI as additional
+data, ideally along with a full transcript of the protocol that led to the
+selection of this PAKE.
+
+Simply concatenating variable-length, possibly attacker controlled values as the
+I-D suggests is dangerous. For example, the (idA, idB) pairs ("ax", "b") and
+("a", "xb") would result equivalent. Instead, this implementation uses HKDF to
+separate secret material, salt, and context, and a uint16-length prefixed
+serialization for CI.
+
+The API allows two possible misuses that maybe should be blocked, depending on
+how severely they would break security guarantees: identities can be empty; and
+A's state can be used multiple times with different B messages.
+
+There should probably be a higher level API that also incorporates an HMAC
+verifier, checking that the peer does indeed have the password and agree on the
+context. Such API should withold the key from B until getting A's HMAC back one
+RTT later, or only expose it through a loud documented method for 0.5-RTT data.
+
+It would be interesting to provide a symmetric API, but it's unclear how the
+salt would be selected (and see above about my uncertainty on its properties).
+
+Flow diagram
+============
+
+    A, B: ci = "cpace-r255" || idA || idB || ad
+    A:    salt = random_bytes()
+    A:    a = random_scalar()
+    A:    A = a * hashToGroup(HKDF(pw, salt, ci))
+    A->B: salt, A
+       B: b = random_scalar()
+       B: B = b * hashToGroup(HKDF(pw, salt, ci))
+       B: K_b = HKDF_Extract(b * A, salt || A || B)
+    A<-B: B
+    A:    K_a = HKDF_Extract(a * B, salt || A || B)
