@@ -9,7 +9,7 @@ package cpace_test
 import (
 	"bytes"
 	"crypto/rand"
-	"crypto/sha512"
+	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -47,12 +47,12 @@ func Example() {
 func TestTranscript(t *testing.T) {
 	// Don't try this at home.
 	defer func(original io.Reader) { rand.Reader = original }(rand.Reader)
-	rand.Reader = hkdf.Expand(sha512.New, []byte("INSECURE"), nil)
+	rand.Reader = hkdf.Expand(sha256.New, []byte("INSECURE"), nil)
 
 	password := "password"
 	c := cpace.NewContextInfo("a", "b", []byte("ad"))
 
-	tx := sha512.New()
+	tx := sha256.New()
 
 	msgA, s, err := cpace.Start(password, c)
 	if err != nil {
@@ -66,9 +66,9 @@ func TestTranscript(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("msgB: %x\n", msgB)
-	tx.Write(key)
-	t.Logf("key: %x\n", key)
 	tx.Write(msgB)
+	t.Logf("key: %x\n", key)
+	tx.Write(key)
 
 	if keyA, err := s.Finish(msgB); err != nil {
 		t.Fatal(err)
@@ -76,7 +76,7 @@ func TestTranscript(t *testing.T) {
 		t.Error("keys were not equal")
 	}
 
-	expected := "6vRYpJez46BWHYxwfhVceLqE44VlJzPtTDn6SpCsKEDxA/VX0aPkSwQZdArulnPzKvN1Ubm9kZ/ujFDxezePVw"
+	expected := "NpHB1PcNLBGo9idbTXys5aRkuAlV+FQAshGfsJoxs3g"
 	if h := base64.RawStdEncoding.EncodeToString(tx.Sum(nil)); h != expected {
 		t.Errorf("transcript hash changed: got %q, expected %q", h, expected)
 	}
@@ -105,7 +105,7 @@ func BenchmarkExchange(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		msgB, key, err := cpace.Exchange(password, c, msgA)
-		if len(msgB) != 32 || len(key) != 64 || err != nil {
+		if len(msgB) != 32 || len(key) != 32 || err != nil {
 			panic(err)
 		}
 	}
@@ -127,7 +127,7 @@ func BenchmarkFinish(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		key, err := s.Finish(msgB)
-		if len(key) != 64 || err != nil {
+		if len(key) != 32 || err != nil {
 			panic(err)
 		}
 	}
@@ -284,11 +284,11 @@ func TestResults(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			if len(keyA) != 64 {
-				t.Errorf("keyA length is %v, expected %v", len(keyA), 64)
+			if len(keyA) != 32 {
+				t.Errorf("keyA length is %v, expected %v", len(keyA), 32)
 			}
-			if len(keyB) != 64 {
-				t.Errorf("keyB length is %v, expected %v", len(keyB), 64)
+			if len(keyB) != 32 {
+				t.Errorf("keyB length is %v, expected %v", len(keyB), 32)
 			}
 
 			if eq := bytes.Equal(keyA, keyB); eq != tt.Equal {
