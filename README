@@ -79,6 +79,6 @@ Flow diagram
     A->B: salt, A
        B: b = random_scalar()
        B: B = b * hashToGroup(HKDF(pw, salt, ci))
-       B: K_b = HKDF_Extract(b * A, salt || A || B)
+       B: K_b = HMAC(salt || A || B, b * A)
     A<-B: B
-    A:    K_a = HKDF_Extract(a * B, salt || A || B)
+    A:    K_a = HMAC(salt || A || B, a * B)
